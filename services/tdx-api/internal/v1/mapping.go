@@ -35,8 +35,9 @@ var v1AdjustToUint = map[string]uint16{
 
 // v1BarCapability V1 品种的 K 线能力。
 type v1BarCapability struct {
-	Periods     []string `json:"periods"`
-	Adjustments []string `json:"adjustments"`
+	Periods           []string `json:"periods"`
+	Adjustments       []string `json:"adjustments"`
+	MaxBarsPerRequest int      `json:"maxBarsPerRequest"`
 }
 
 // v1InstrumentCapabilities V1 品种可启用的行情能力。
@@ -46,6 +47,8 @@ type v1InstrumentCapabilities struct {
 	TimeShare       *bool                       `json:"timeShare,omitempty"`
 	TimeShareRange  *v1TimeShareRangeCapability `json:"timeShareRange,omitempty"`
 	Depth           *bool                       `json:"depth,omitempty"`
+	// LiveBars 是否支持 /sources/gotdx/stream 实时 K 线流（仅主市场 A 股/指数）。
+	LiveBars *bool `json:"liveBars,omitempty"`
 }
 
 // v1TimeShareRangeCapability 声明多日分时接口可一次查询的交易日上限。
@@ -68,6 +71,8 @@ type v1SourceCapabilities struct {
 	TimeShareRange  *v1TimeShareRangeCapability `json:"timeShareRange,omitempty"`
 	Depth           *bool                       `json:"depth,omitempty"`
 	HistoryCoverage *v1HistoryCoverage          `json:"historyCoverage,omitempty"`
+	// LiveBars 源级实时 K 线流能力；具体品种以品种级 liveBars 为准。
+	LiveBars bool `json:"liveBars"`
 }
 
 // v1SourceCapabilitiesFor 构建 gotdx 源级能力声明。
@@ -81,8 +86,9 @@ func v1SourceCapabilitiesFor() v1SourceCapabilities {
 		TradingCalendar: true,
 		AssetClasses:    []string{"stock", "index", "fund", "future", "option", "forex"},
 		Bars: &v1BarCapability{
-			Periods:     append([]string(nil), v1KLinePeriods...),
-			Adjustments: []string{"qfq", "hfq", "none"},
+			Periods:           append([]string(nil), v1KLinePeriods...),
+			Adjustments:       []string{"qfq", "hfq", "none"},
+			MaxBarsPerRequest: v1MaxBarsPerRequest,
 		},
 		TimeShare:      &timeShare,
 		TimeShareRange: &v1TimeShareRangeCapability{MaxTradingDays: v1MaxTimeShareRangeDays},
@@ -90,21 +96,26 @@ func v1SourceCapabilitiesFor() v1SourceCapabilities {
 		HistoryCoverage: &v1HistoryCoverage{
 			To: now,
 		},
+		LiveBars: true,
 	}
 }
 
 // v1InstrumentCapabilitiesFor 返回指定 kind 品种实际支持的能力。
 // kind=stock 经 StockKLine 支持复权；index/ex 均无复权参数，仅支持 none。
+// 实时 K 线流只覆盖主市场 A 股/指数，扩展行情显式声明 liveBars=false。
 func v1InstrumentCapabilitiesFor(kind string) v1InstrumentCapabilities {
 	adjustments := []string{"none"}
 	if kind == domain.KindStock {
 		adjustments = []string{"qfq", "hfq", "none"}
 	}
 	timeShare := true
+	liveBars := kind == domain.KindStock || kind == domain.KindIndex
 	return v1InstrumentCapabilities{
+		LiveBars: &liveBars,
 		Bars: &v1BarCapability{
-			Periods:     append([]string(nil), v1KLinePeriods...),
-			Adjustments: adjustments,
+			Periods:           append([]string(nil), v1KLinePeriods...),
+			Adjustments:       adjustments,
+			MaxBarsPerRequest: v1MaxBarsPerRequest,
 		},
 		TimeShare:      &timeShare,
 		TimeShareRange: &v1TimeShareRangeCapability{MaxTradingDays: v1MaxTimeShareRangeDays},
